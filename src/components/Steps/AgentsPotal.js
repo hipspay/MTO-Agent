@@ -16,16 +16,32 @@ import { useSelector } from 'react-redux';
 import escrowABI from '../constants/escrowABI.json';
 import tokenABI from '../constants/tokenABI.json';
 import { toWei, sleep } from '../utils/index';
-import { checkParticipation } from '../apis/participation';
+// import { useSnackbar } from 'notistack';
+// import { checkParticipation } from '../../apis/participation';
+
+const notificationConfig = {
+    preventDuplicate: true,
+    vertical: 'bottom',
+    horizontal: 'right',
+};
 const AgentsPotal = () => {
     const [status, setStatus] = useState(5);
     const [isLoading, setIsLoading] = useState(false);
+    // const { enqueueSnackbar } = useSnackbar();
 
-    const [escrowContract, setEscrowContract] = useState(null);
-    const [tokenContract, setTokenContract] = useState(null);
+    // const [escrowContract, setEscrowContract] = useState(null);
+    // const [tokenContract, setTokenContract] = useState(null);
 
     const { web3, account, connected } = useSelector((state) => state.web3);
+    const bkdDriver = useSelector((state) => state.driverObject.bkdDriver);
+    const scDriver = useSelector((state) => state.driverObject.scDriver);
 
+    // const showNotification = (msg) => {
+    //     enqueueSnackbar(msg, {
+    //         ...notificationConfig,
+    //         variant: 'error',
+    //     });
+    // };
     const gotoPage3 = () => {
         setIsLoading(true);
         setTimeout(() => {
@@ -74,28 +90,30 @@ const AgentsPotal = () => {
         }, 5000);
     };
 
-    React.useEffect(() => {
-        if (escrowContract && tokenContract) return;
-        if (!connected) return;
+    // React.useEffect(() => {
+    //     if (escrowContract && tokenContract) return;
+    //     if (!connected) return;
 
-        const EscrowContract = new web3.eth.Contract(
-            escrowABI,
-            process.env.REACT_APP_ESCROW_CONTRACT_ADDRESS
-        );
+    //     const EscrowContract = new web3.eth.Contract(
+    //         escrowABI,
+    //         process.env.REACT_APP_ESCROW_CONTRACT_ADDRESS
+    //     );
 
-        const TokenContract = new web3.eth.Contract(
-            tokenABI,
-            process.env.REACT_APP_TOKEN_CONTRACT_ADDRESS
-        );
+    //     const TokenContract = new web3.eth.Contract(
+    //         tokenABI,
+    //         process.env.REACT_APP_TOKEN_CONTRACT_ADDRESS
+    //     );
 
-        setEscrowContract(EscrowContract);
-        setTokenContract(TokenContract);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [web3]);
+    //     setEscrowContract(EscrowContract);
+    //     setTokenContract(TokenContract);
+    //     // eslint-disable-next-line react-hooks/exhaustive-deps
+    // }, [web3]);
 
     const verifyParticipation = async (timeToEnd) => {
+        if (!bkdDriver || !bkdDriver.headers)
+            return;
         try {
-            const { data } = await checkParticipation();
+            const  data  = await bkdDriver.check();
             console.log(data);
             if (data === true) return true;
             await sleep(2000);
@@ -116,15 +134,30 @@ const AgentsPotal = () => {
     };
 
     const participate = async () => {
+        console.log('participate 2');
         try {
             setIsLoading(true);
-            const amount = toWei(web3, 5);
+            const amount = toWei(web3, process.env.REACT_APP_AGENT_PARTICIPATE_AMOUNT);
 
-            await tokenContract.methods
-                .approve(process.env.REACT_APP_ESCROW_CONTRACT_ADDRESS, amount)
-                .send({ from: account });
+            const balance = await scDriver.getTokenBalance();
+            if(Number(balance.toString()) < Number(amount)) {
+                // showNotification('User does not have enough balance.');
+                console.log('User does not have enough balance.');
+                setIsLoading(false);
+                return
+            }
+            const approve = await scDriver.approve(amount);
+            const approveReceipt = await approve.wait();
+            console.log(' approve_receipt', approveReceipt);
 
-            await escrowContract.methods.participate().send({ from: account });
+            // await tokenContract.methods
+            //     .approve(process.env.REACT_APP_ESCROW_CONTRACT_ADDRESS, amount)
+            //     .send({ from: account });
+
+            // await escrowContract.methods.participate().send({ from: account });
+            const participate = await scDriver.participate();
+            const participateReceipt = await participate.wait();
+            console.log(' participateReceipt', participateReceipt);
 
             const endRequestsAt = Date.now() + 120000;
             const result = await verifyParticipation(endRequestsAt);
@@ -153,7 +186,7 @@ const AgentsPotal = () => {
             {status === 1 && (
                 <StepsContainer>
                     <Participate mtoToPay={5} mtoToReceive={10} />
-                    <Button onClick={participate} disabled={!!!escrowContract}>
+                    <Button onClick={participate}>
                         Participate
                     </Button>
                 </StepsContainer>
@@ -161,8 +194,7 @@ const AgentsPotal = () => {
 
             {status === 2 && (
                 <StepsContainer>
-                    <Waiting />
-                    <Button onClick={gotoPage3}>Reload</Button>
+                    <Waiting />                    
                 </StepsContainer>
             )}
 

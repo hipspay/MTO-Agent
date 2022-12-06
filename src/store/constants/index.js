@@ -1,3 +1,5 @@
+export const SET_BKD_DRIVER = 'SET_BKD_DRIVER';
+export const SET_SC_DRIVER = 'SET_SC_DRIVER';
 export const WEB3_OBJECT = 'WEB3_OBJECT';
 export const WEB_3_CONNECTED = 'WEB_3_CONNECTED';
 

@@ -16,37 +16,55 @@ import {
 } from '../components/Steps';
 import { Grid, Typography } from '@material-ui/core';
 import { useSelector, useDispatch } from 'react-redux';
-import escrowABI from '../constants/escrowABI.json';
-import tokenABI from '../constants/tokenABI.json';
+// import escrowABI from '../constants/escrowABI.json';
+// import tokenABI from '../constants/tokenABI.json';
 import { toWei, sleep } from '../utils/index';
-import { checkParticipation, checkInit } from '../apis/participation';
-import { profile } from '../apis/auth.api';
+// import { checkParticipation, checkInit } from '../apis/participation';
+// import { profile } from '../apis/auth.api';
 import { setUserData } from '../store/actions/authActions';
+// import { useSnackbar } from 'notistack';
 
+const notificationConfig = {
+    preventDuplicate: true,
+    vertical: 'bottom',
+    horizontal: 'right',
+};
 const AgentsPotal = () => {
     const dispatch = useDispatch();
+    // const { enqueueSnackbar } = useSnackbar();
     const [status, setStatus] = useState('init');
     const [isLoading, setIsLoading] = useState(false);
+    
 
-    const [escrowContract, setEscrowContract] = useState(null);
-    const [tokenContract, setTokenContract] = useState(null);
+    // const [escrowContract, setEscrowContract] = useState(null);
+    // const [tokenContract, setTokenContract] = useState(null);
 
     const { web3, account, connected } = useSelector((state) => state.web3);
 
     const { userData } = useSelector((state) => state.auth);
+    const bkdDriver = useSelector((state) => state.driverObject.bkdDriver);
+    const scDriver = useSelector((state) => state.driverObject.scDriver);
+
+    // const showNotification = (msg) => {
+    //     enqueueSnackbar(msg, {
+    //         ...notificationConfig,
+    //         variant: 'error',
+    //     });
+    // };
 
     const getProfile = async () => {
-        const token = localStorage.getItem('token');
-        if (token) {
+
+        try {
+            if (!bkdDriver || !bkdDriver.headers)
+                return;
+        
             setIsLoading(true);
-            try {
-                const { data } = await profile();
-                dispatch(setUserData(data));
-                setIsLoading(false);
-            } catch (error) {
-                console.log(error);
-                setIsLoading(false);
-            }
+            const profile = await bkdDriver.profile();
+            console.log('profile', profile);
+            dispatch(setUserData(profile));  
+            setIsLoading(false);
+        } catch (error) {
+            setIsLoading(false);
         }
     };
 
@@ -54,9 +72,12 @@ const AgentsPotal = () => {
         try {
             setIsLoading(true);
 
-            await escrowContract.methods
-                .agentWithdraw()
-                .send({ from: account });
+            const withdraw = await scDriver.agentWithdraw();
+            const withdrawReceipt = await withdraw.wait();
+            console.log(' withdrawReceipt', withdrawReceipt);
+            // await escrowContract.methods
+            //     .agentWithdraw()
+            //     .send({ from: account });
 
             const endRequestsAt = Date.now() + 120000;
             const result = await verifyInit(endRequestsAt);
@@ -71,28 +92,30 @@ const AgentsPotal = () => {
         }
     };
 
-    React.useEffect(() => {
-        if (escrowContract && tokenContract) return;
-        if (!connected) return;
+    // React.useEffect(() => {
+    //     if (escrowContract && tokenContract) return;
+    //     if (!connected) return;
 
-        const EscrowContract = new web3.eth.Contract(
-            escrowABI,
-            process.env.REACT_APP_ESCROW_CONTRACT_ADDRESS
-        );
+    //     const EscrowContract = new web3.eth.Contract(
+    //         escrowABI,
+    //         process.env.REACT_APP_ESCROW_CONTRACT_ADDRESS
+    //     );
 
-        const TokenContract = new web3.eth.Contract(
-            tokenABI,
-            process.env.REACT_APP_TOKEN_CONTRACT_ADDRESS
-        );
+    //     const TokenContract = new web3.eth.Contract(
+    //         tokenABI,
+    //         process.env.REACT_APP_TOKEN_CONTRACT_ADDRESS
+    //     );
 
-        setEscrowContract(EscrowContract);
-        setTokenContract(TokenContract);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [web3]);
+    //     setEscrowContract(EscrowContract);
+    //     setTokenContract(TokenContract);
+    //     // eslint-disable-next-line react-hooks/exhaustive-deps
+    // }, [web3]);
 
     const verifyParticipation = async (timeToEnd) => {
+        if (!bkdDriver || !bkdDriver.headers)
+            return;
         try {
-            const { data } = await checkParticipation();
+            const  data  = await bkdDriver.check();
             console.log(data);
             if (data === true) return true;
             await sleep(2000);
@@ -113,8 +136,10 @@ const AgentsPotal = () => {
     };
 
     const verifyInit = async (timeToEnd) => {
+        if (!bkdDriver || !bkdDriver.headers)
+            return;
         try {
-            const { data } = await checkInit();
+            const data = await bkdDriver.checkInit();
             console.log(data);
             if (data === true) return true;
             await sleep(2000);
@@ -135,15 +160,30 @@ const AgentsPotal = () => {
     };
 
     const participate = async () => {
+        console.log('participate 1');
         try {
             setIsLoading(true);
-            const amount = toWei(web3, 5);
+            const amount = toWei(web3, process.env.REACT_APP_AGENT_PARTICIPATE_AMOUNT);
 
-            await tokenContract.methods
-                .approve(process.env.REACT_APP_ESCROW_CONTRACT_ADDRESS, amount)
-                .send({ from: account });
+            const balance = await scDriver.getTokenBalance();
+            if(Number(balance.toString()) < Number(amount)) {
+                // showNotification('User does not have enough balance.');
+                console.log('User does not have enough balance.');
+                setIsLoading(false);
+                return
+            }
+            const approve = await scDriver.approve(amount);
+            const approveReceipt = await approve.wait();
+            console.log(' approve_receipt', approveReceipt);
 
-            await escrowContract.methods.participate().send({ from: account });
+            // await tokenContract.methods
+            //     .approve(process.env.REACT_APP_ESCROW_CONTRACT_ADDRESS, amount)
+            //     .send({ from: account });
+
+            // await escrowContract.methods.participate().send({ from: account });
+            const participate = await scDriver.participate();
+            const participateReceipt = await participate.wait();
+            console.log(' participateReceipt', participateReceipt);
 
             const endRequestsAt = Date.now() + 120000;
             const result = await verifyParticipation(endRequestsAt);
@@ -160,12 +200,21 @@ const AgentsPotal = () => {
 
     const submit = async (decision) => {
         try {
+
+            console.log(userData.dispute.disputeId, decision)
             setIsLoading(true);
-            await escrowContract.methods
-                .submit(userData.dispute.disputeId, decision)
-                .send({ from: account });
+
+            const submit = await scDriver.submit(userData.dispute.disputeId, decision);
+            const submitReceipt = await submit.wait();
+            console.log(' submitReceipt', submitReceipt);
+
+            // await escrowContract.methods
+            //     .submit(userData.dispute.disputeId, decision)
+            //     .send({ from: account });
+
+            
             setStatus(
-                decision === 3 ? 'pending_approved' : 'pending_disapproved'
+                decision === 4 ? 'pending_approved' : 'pending_disapproved'
             );
             setIsLoading(false);
         } catch (error) {
@@ -180,6 +229,58 @@ const AgentsPotal = () => {
         }
     }, [userData]);
     console.log(userData);
+
+
+    const verifyPickDispute = async (timeToEnd) => {
+        if (!bkdDriver || !bkdDriver.headers)
+            return;
+        try {
+            const  profile  = await bkdDriver.profile();
+            if (profile.status === 'review') {
+                dispatch(setUserData(profile));  
+                return true;
+            }
+            await sleep(2000);
+
+            console.log(Date.now(), timeToEnd, Date.now() > timeToEnd);
+            if (Date.now() > timeToEnd && profile === false) {
+                return false;
+            } else {
+                return verifyPickDispute(timeToEnd);
+            }
+        } catch (error) {
+            console.log(error);
+            await sleep(2000);
+            if (Date.now() > timeToEnd) {
+                return false;
+            }
+            return verifyPickDispute(timeToEnd);
+        }
+    };
+
+
+    const pickDispute = async (dispute) => {
+        console.log('participate 1');
+        try {
+            setIsLoading(true);
+            
+            const pick = await scDriver.pickDispute(dispute.disputeId);
+            const pickReceipt = await pick.wait();
+            console.log(' pickReceipt', pickReceipt);
+
+            const endRequestsAt = Date.now() + 120000;
+            const result = await verifyPickDispute(endRequestsAt);
+
+            if (result) {
+                setStatus('review');
+            }
+            setIsLoading(false);
+        } catch (error) {
+            setIsLoading(false);
+            console.log(error);
+        }
+    };
+
     return (
         <>
             <Typography
@@ -193,7 +294,7 @@ const AgentsPotal = () => {
             {status === 'init' && (
                 <StepsContainer>
                     <Participate mtoToPay={5} mtoToReceive={10} />
-                    <Button onClick={participate} disabled={!!!escrowContract}>
+                    <Button onClick={participate} >
                         Participate
                     </Button>
                 </StepsContainer>
@@ -201,8 +302,10 @@ const AgentsPotal = () => {
 
             {status === 'waiting' && (
                 <StepsContainer>
-                    <Waiting />
-                    <Button onClick={getProfile}>Reload</Button>
+                    <Waiting 
+                    pickDispute={pickDispute}
+                    />
+                    {/* <Button onClick={getProfile}>Reload</Button> */}
                 </StepsContainer>
             )}
 
@@ -217,7 +320,7 @@ const AgentsPotal = () => {
                     >
                         <Grid item xs={3}>
                             <Button
-                                onClick={() => submit(3)}
+                                onClick={() => submit(4)}
                                 color="primary"
                                 size="large"
                             >
@@ -231,7 +334,7 @@ const AgentsPotal = () => {
                             alignItems="left"
                         >
                             <Button
-                                onClick={() => submit(4)}
+                                onClick={() => submit(5)}
                                 color="secondary"
                                 // style={{ background: '#FFB611' }}
                                 size="large"
@@ -274,7 +377,7 @@ const AgentsPotal = () => {
             {status === 'lost' && (
                 <StepsContainer>
                     <Lost lostScore={20} />
-                    <Button onClick={participate} disabled={!!!escrowContract}>
+                    <Button onClick={participate}>
                         Participate
                     </Button>
                 </StepsContainer>

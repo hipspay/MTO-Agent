@@ -9,6 +9,19 @@ const networks = {
             symbol: 'ETH',
             decimals: 18,
         },
+        blockchain: 'rinkeby-testnet',
     },
+    goerli: {
+        icon: '/networks/eth.png',
+        chainName: 'ETH',
+        chainId: '0x5',
+        rpcUrl: 'https://eth-goerli.alchemyapi.io/v2/iN-PGlLtC7flU86i-tx2WaGkp3Nz-J2_',
+        nativeCurrency: {
+            name: 'Ethereum',
+            symbol: 'ETH',
+            decimals: 18,
+        },
+        blockchain: 'goerli-testnet',
+    }
 };
 export default networks;

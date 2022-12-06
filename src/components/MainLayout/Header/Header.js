@@ -5,9 +5,9 @@ import { PermIdentity, Menu as MenuIcon } from '@material-ui/icons';
 import { useDispatch, useSelector } from 'react-redux';
 
 import Web3 from 'web3';
-import Web3Modal from 'web3modal';
-import WalletConnectProvider from '@walletconnect/web3-provider';
-import { auth, profile } from '../../../apis/auth.api';
+// import Web3Modal from 'web3modal';
+// import WalletConnectProvider from '@walletconnect/web3-provider';
+// import { auth, profile } from '../../../apis/auth.api';
 
 import ConnectButton from '../../ConnectButton/index';
 import networks from '../../../constants/networks';
@@ -21,13 +21,16 @@ import {
     setNetwork,
 } from '../../../store/actions/web3action';
 import { setUserData } from '../../../store/actions/authActions';
+import { AgentDriver } from "mto-metamask-backend-driver";
+import { MTOMetamaskDriver } from "mto-metamask-driver";
+import { setBkdDriver, setScDriver } from '../../../store/actions/driverAction';
 
 import './style.scss';
 
 const Header = ({ toggleSidebar }) => {
     const dispatch = useDispatch();
     const [anchorEl, setAnchorEl] = useState(null);
-
+    const network = useSelector((state) => state.web3.network);
     const handleClick = (event) => {
         setAnchorEl(event.currentTarget);
     };
@@ -42,24 +45,26 @@ const Header = ({ toggleSidebar }) => {
     const isWeb3Connected = useSelector((state) => state.web3.web3connected);
     const metaMaskAddress = useSelector((state) => state.web3.metaMaskAddress);
     const web3Object = useSelector((state) => state.web3.web3object);
+    const bkdDriver = useSelector((state) => state.driverObject.bkdDriver);
+    const scDriver = useSelector((state) => state.driverObject.scDriver);
 
-    const providerOptions = {
-        walletconnect: {
-            display: {
-                name: 'Mobile',
-            },
-            package: WalletConnectProvider,
-            options: {
-                infuraId: process.env.REACT_APP_INFURA_KEY,
-            },
-        },
-    };
+    // const providerOptions = {
+    //     walletconnect: {
+    //         display: {
+    //             name: 'Mobile',
+    //         },
+    //         package: WalletConnectProvider,
+    //         options: {
+    //             infuraId: process.env.REACT_APP_INFURA_KEY,
+    //         },
+    //     },
+    // };
 
-    const web3Modal = new Web3Modal({
-        network: 'rinkeby',
-        // cacheProvider: true,
-        providerOptions, // required
-    });
+    // const web3Modal = new Web3Modal({
+    //     network: 'rinkeby',
+    //     // cacheProvider: true,
+    //     providerOptions, // required
+    // });
 
     const disconnectWallet = async () => {
         // logout();
@@ -104,7 +109,7 @@ const Header = ({ toggleSidebar }) => {
             if (
                 sessionStorage.getItem('userAccount') &&
                 sessionStorage.getItem('userAccount').toLowerCase() ===
-                    accounts[0].toLowerCase()
+                    accounts[0].toLowerCase() && bkdDriver?.headers
             ) {
                 dispatch(Web3Object(web3));
                 dispatch(web3Connected(true));
@@ -119,31 +124,51 @@ const Header = ({ toggleSidebar }) => {
                 return;
             }
 
-            const signature = await web3.eth.personal.sign(
-                process.env.REACT_APP_SIGN_STRING,
-                accounts[0]
-            );
-            const result = await auth(signature);
-            if (result) {
-                localStorage.setItem('token', result.data.token);
-                sessionStorage.setItem(
-                    'userBalance',
-                    Number(ethers).toFixed(2)
-                );
-                sessionStorage.setItem('userAccount', accounts[0]);
-                getProfile();
+            console.log('accounts', accounts);
+            const _bkdDriver = new AgentDriver({
+                appKey: process.env.REACT_APP_APPKEY,
+                baseUrl: process.env.REACT_APP_API
+            });
 
-                dispatch(Web3Object(web3));
-                dispatch(web3Connected(true));
-                dispatch(
-                    setWeb3Data({
-                        web3,
-                        connected: true,
-                        balance: Number(ethers).toFixed(2),
-                        account: accounts[0],
-                    })
-                );
-            }
+            console.log('bkdDriver', _bkdDriver);
+
+            await _bkdDriver.init();
+            
+            console.log('driver1', _bkdDriver)
+            dispatch(setBkdDriver(_bkdDriver));
+
+            const _scDriver = new MTOMetamaskDriver({
+                blockchain: network.blockchain,
+            });
+            await _scDriver.init();
+
+            console.log('_scDriver', _scDriver)
+            dispatch(setScDriver(_scDriver));
+            // const signature = await web3.eth.personal.sign(
+            //     process.env.REACT_APP_SIGN_STRING,
+            //     accounts[0]
+            // );
+            // const result = await auth(signature);
+            // if (result) {
+            //     localStorage.setItem('token', result.data.token);
+            sessionStorage.setItem(
+                'userBalance',
+                Number(ethers).toFixed(2)
+            );
+            sessionStorage.setItem('userAccount', accounts[0]);
+            getProfile();
+
+            dispatch(Web3Object(web3));
+            dispatch(web3Connected(true));
+            dispatch(
+                setWeb3Data({
+                    web3,
+                    connected: true,
+                    balance: Number(ethers).toFixed(2),
+                    account: accounts[0],
+                })
+            );
+            // }
         } catch (error) {
             console.log(error);
             if (error && error.code === 4001) {
@@ -192,16 +217,22 @@ const Header = ({ toggleSidebar }) => {
     };
 
     const getProfile = async () => {
-        const token = localStorage.getItem('token');
-        if (token) {
-            const { data } = await profile();
-            dispatch(setUserData(data));
-        }
+        // const token = localStorage.getItem('token');
+        // if (token) {
+        //     const result = await profile();
+        //     console.log(result.data);
+        // }
+        if (!bkdDriver || !bkdDriver.headers)
+            return;
+
+        const profile = await bkdDriver.profile();
+        console.log('profile', profile);
+        dispatch(setUserData(profile));        
     };
 
     React.useEffect(() => {
         getProfile();
-    }, []);
+    }, [bkdDriver]);
 
     return (
         <div className="app-header">
